@@ -17,7 +17,6 @@ function createCallback(nodename: string, basename: string, inputType: string) {
             for (let index = this.inputs.length; index--; ) {
                 const input = this.inputs[index]
                 if (getInputBasename(input) === basename && input.link === null) {
-                    console.log("Remove:", input)
                     this.removeInput(index)
                     const widgetIndex = (this.widgets as any[]).findIndex((value) => value.name === input.name)
                     if (widgetIndex != -1) {
