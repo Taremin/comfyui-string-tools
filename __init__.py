@@ -33,7 +33,7 @@ class StringToolsConcat:
             del kwargs["separator"]
         else:
             separator = ""
-        return separator.join(kwargs.values())
+        return (separator.join(kwargs.values()),)
 
 
 class StringToolsRandomChoice:
@@ -67,13 +67,12 @@ class StringToolsRandomChoice:
     CATEGORY = "string-tools"
 
     def process(self, *args, **kwargs):
-        values = kwargs.values()
+        values = list(kwargs.values())
         if len(values) == 0:
             return ""
 
         random.seed(0)
-        random.choice
-        return random.choice(values)
+        return (random.choice(values),)
 
 
 NODE_CLASS_MAPPINGS = {
