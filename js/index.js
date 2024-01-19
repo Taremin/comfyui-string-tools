@@ -13,7 +13,6 @@ function createCallback(nodename, basename, inputType) {
             for (let index = this.inputs.length; index--;) {
                 const input = this.inputs[index];
                 if (getInputBasename(input) === basename && input.link === null) {
-                    console.log("Remove:", input);
                     this.removeInput(index);
                     const widgetIndex = this.widgets.findIndex((value) => value.name === input.name);
                     if (widgetIndex != -1) {
@@ -37,6 +36,7 @@ function createCallback(nodename, basename, inputType) {
             for (let i = 0, il = this.inputs.length; i < il; ++i) {
                 const input = this.inputs[i];
                 if (input.widget) {
+                    setWidgetConfig(input, [input.type, { forceInput: true }]);
                     continue;
                 }
                 // setup widget
@@ -45,7 +45,6 @@ function createCallback(nodename, basename, inputType) {
                     computeSize: () => [0, -4], // widgetsInputs.js -> hideWidgets
                 };
                 setWidgetConfig(input, [inputType, { forceInput: true }]);
-                this.widgets.push(input.widget);
             }
         };
         const onNodeCreatedOriginal = nodeType.prototype.onNodeCreated;

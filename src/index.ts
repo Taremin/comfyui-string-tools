@@ -43,6 +43,7 @@ function createCallback(nodename: string, basename: string, inputType: string) {
                 const input = this.inputs[i]
 
                 if (input.widget) {
+                    setWidgetConfig(input, [input.type, {forceInput: true}]);
                     continue
                 }
 
@@ -52,7 +53,6 @@ function createCallback(nodename: string, basename: string, inputType: string) {
                     computeSize: () => [0, -4], // widgetsInputs.js -> hideWidgets
                 }
                 setWidgetConfig(input, [inputType, {forceInput: true}]);
-                this.widgets.push(input.widget)
             }
         }
 
