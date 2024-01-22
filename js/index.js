@@ -58,7 +58,7 @@ function createCallback(nodename, basename, inputType) {
             const onConnectInputOriginal = this.onConnectInput;
             this.onConnectInput = function (targetSlot, type, output, originNode, originSlot) {
                 let retVal = onConnectInputOriginal ? onConnectInputOriginal.apply(this, arguments) : void 0;
-                if (originNode.type === "PrimitiveNode") {
+                if (originNode.type === "PrimitiveNode" && getInputBasename(this.inputs[targetSlot]) === basename) {
                     return false;
                 }
                 this.removeCancel = targetSlot;
@@ -68,12 +68,14 @@ function createCallback(nodename, basename, inputType) {
             this.onInputDblClick = function (slot) {
                 if (onInputDblClickOriginal) {
                     const originalCreateNode = LiteGraph.createNode;
-                    LiteGraph.createNode = function (nodeType) {
-                        if (nodeData !== "PrimitiveNode") {
-                            return originalCreateNode.apply(this, arguments);
-                        }
-                        return originalCreateNode.call(this, "StringToolsText");
-                    };
+                    if (getInputBasename(this.inputs[slot]) === basename) {
+                        LiteGraph.createNode = function (nodeType) {
+                            if (nodeType !== "PrimitiveNode") {
+                                return originalCreateNode.apply(this, arguments);
+                            }
+                            return originalCreateNode.call(this, "StringToolsText");
+                        };
+                    }
                     onInputDblClickOriginal.call(this, slot);
                     LiteGraph.createNode = originalCreateNode;
                 }
@@ -108,17 +110,6 @@ function createCallback(nodename, basename, inputType) {
                     this.widgets = this.tmpWidgets.concat(this.widgets);
                     delete this.tmpWidgets;
                 }
-                if (this.widgets_values) {
-                    for (let i = 0, il = this.widgets_values.length; i < il; ++i) {
-                        const value = this.widgets_values[i];
-                        if (value === null || value === void 0) {
-                            continue;
-                        }
-                        this.widgets[i].value = value;
-                    }
-                }
-                this.setSize(this.computeSize());
-                this.setDirtyCanvas(true, true);
                 if (app.configuringGraph) {
                     updateInputs.call(this);
                 }
