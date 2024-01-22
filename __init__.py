@@ -20,6 +20,52 @@ def sort_kwargs_value(basename, kwargs, separator="_"):
     )
 
 
+class StringToolsString:
+    def __init__(self):
+        pass
+
+    @classmethod
+    def INPUT_TYPES(s):
+        return {
+            "required": {
+                "text": (
+                    "STRING",
+                    {},
+                ),
+            },
+        }
+
+    RETURN_TYPES = ("STRING",)
+    FUNCTION = "process"
+    CATEGORY = "string-tools"
+
+    def process(self, text):
+        return (text,)
+
+
+class StringToolsText:
+    def __init__(self):
+        pass
+
+    @classmethod
+    def INPUT_TYPES(s):
+        return {
+            "required": {
+                "text": (
+                    "STRING",
+                    {"multiline": True},
+                ),
+            },
+        }
+
+    RETURN_TYPES = ("STRING",)
+    FUNCTION = "process"
+    CATEGORY = "string-tools"
+
+    def process(self, text):
+        return (text,)
+
+
 class StringToolsConcat:
     def __init__(self):
         pass
@@ -86,15 +132,20 @@ class StringToolsRandomChoice:
     CATEGORY = "string-tools"
 
     def process(self, *args, **kwargs):
-        values = list(kwargs.values())
-        if len(values) == 0:
-            return ""
+        seed = 0
+        if "seed" in kwargs:
+            seed = kwargs["seed"]
+            del kwargs["seed"]
 
-        random.seed(0)
-        return (random.choice(values),)
+        values = sort_kwargs_value("text", kwargs)
+        random.seed(seed)
+        choice = random.choice(values)
+        return (choice,)
 
 
 NODE_CLASS_MAPPINGS = {
+    "StringToolsString": StringToolsString,
+    "StringToolsText": StringToolsText,
     "StringToolsConcat": StringToolsConcat,
     "StringToolsRandomChoice": StringToolsRandomChoice,
 }

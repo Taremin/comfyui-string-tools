@@ -1,6 +1,7 @@
 import { app } from "/scripts/app.js"
 import { setWidgetConfig } from "/extensions/core/widgetInputs.js"
 
+declare const LiteGraph: any
 
 function createCallback(nodename: string, basename: string, inputType: string) {
     return async function(nodeType:any, nodeData:any, app:any) {
@@ -16,7 +17,7 @@ function createCallback(nodename: string, basename: string, inputType: string) {
             // remove empty inputs
             for (let index = this.inputs.length; index--; ) {
                 const input = this.inputs[index]
-                if (getInputBasename(input) === basename && input.link === null) {
+                if (getInputBasename(input) === basename && input.link === null && this.removeCancel !== index) {
                     this.removeInput(index)
                     const widgetIndex = (this.widgets as any[]).findIndex((value) => value.name === input.name)
                     if (widgetIndex != -1) {
@@ -50,9 +51,8 @@ function createCallback(nodename: string, basename: string, inputType: string) {
                 // setup widget
                 input.widget = {
                     name: input.name,
-                    computeSize: () => [0, -4], // widgetsInputs.js -> hideWidgets
                 }
-                setWidgetConfig(input, [inputType, {forceInput: true}]);
+                setWidgetConfig(input, [inputType, {forceInput: true}])
             }
         }
 
@@ -63,6 +63,33 @@ function createCallback(nodename: string, basename: string, inputType: string) {
                 app.configuringGraph = false
                 onNodeCreatedOriginal.call(this)
                 app.configuringGraph = tmp 
+            }
+            this.removeCancel = -1
+
+            const onConnectInputOriginal = this.onConnectInput
+            this.onConnectInput = function(targetSlot: number, type: string, output:any, originNode:any, originSlot:number) {
+                let retVal = onConnectInputOriginal ? onConnectInputOriginal.apply(this, arguments) : void 0
+                if (originNode.type === "PrimitiveNode") {
+                    return false
+                }
+                this.removeCancel = targetSlot
+
+                return retVal
+            }
+
+            const onInputDblClickOriginal = this.onInputDblClick
+            this.onInputDblClick = function(slot: number) {
+                if (onInputDblClickOriginal) {
+                    const originalCreateNode = LiteGraph.createNode
+                    LiteGraph.createNode = function(nodeType: string) {
+                        if (nodeData !== "PrimitiveNode") {
+                            return originalCreateNode.apply(this, arguments)
+                        }
+                        return originalCreateNode.call(this, "StringToolsText")
+                    }
+                    onInputDblClickOriginal.call(this, slot)
+                    LiteGraph.createNode = originalCreateNode
+                }
             }
 
             const onConnectionsChange = this.onConnectionsChange
@@ -81,6 +108,8 @@ function createCallback(nodename: string, basename: string, inputType: string) {
                 }
 
                 updateInputs.call(this)
+
+                this.removeCancel = -1
             }
 
             this.onAdded = function(graph: any) {
@@ -94,7 +123,7 @@ function createCallback(nodename: string, basename: string, inputType: string) {
             }
 
             // デフォルトの onGraphConfigured は動的なソケットを破壊するので使用しない
-            const onGraphConfiguredOriginal = this.onGraphConfigured
+            const onGraphConfigured = this.onGraphConfigured
             this.onGraphConfigured = function() {
                 if (this.tmpWidgets) {
                     this.widgets = this.tmpWidgets.concat(this.widgets)

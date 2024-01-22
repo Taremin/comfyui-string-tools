@@ -12,7 +12,7 @@ function createCallback(nodename, basename, inputType) {
             // remove empty inputs
             for (let index = this.inputs.length; index--;) {
                 const input = this.inputs[index];
-                if (getInputBasename(input) === basename && input.link === null) {
+                if (getInputBasename(input) === basename && input.link === null && this.removeCancel !== index) {
                     this.removeInput(index);
                     const widgetIndex = this.widgets.findIndex((value) => value.name === input.name);
                     if (widgetIndex != -1) {
@@ -42,7 +42,6 @@ function createCallback(nodename, basename, inputType) {
                 // setup widget
                 input.widget = {
                     name: input.name,
-                    computeSize: () => [0, -4], // widgetsInputs.js -> hideWidgets
                 };
                 setWidgetConfig(input, [inputType, { forceInput: true }]);
             }
@@ -55,6 +54,30 @@ function createCallback(nodename, basename, inputType) {
                 onNodeCreatedOriginal.call(this);
                 app.configuringGraph = tmp;
             }
+            this.removeCancel = -1;
+            const onConnectInputOriginal = this.onConnectInput;
+            this.onConnectInput = function (targetSlot, type, output, originNode, originSlot) {
+                let retVal = onConnectInputOriginal ? onConnectInputOriginal.apply(this, arguments) : void 0;
+                if (originNode.type === "PrimitiveNode") {
+                    return false;
+                }
+                this.removeCancel = targetSlot;
+                return retVal;
+            };
+            const onInputDblClickOriginal = this.onInputDblClick;
+            this.onInputDblClick = function (slot) {
+                if (onInputDblClickOriginal) {
+                    const originalCreateNode = LiteGraph.createNode;
+                    LiteGraph.createNode = function (nodeType) {
+                        if (nodeData !== "PrimitiveNode") {
+                            return originalCreateNode.apply(this, arguments);
+                        }
+                        return originalCreateNode.call(this, "StringToolsText");
+                    };
+                    onInputDblClickOriginal.call(this, slot);
+                    LiteGraph.createNode = originalCreateNode;
+                }
+            };
             const onConnectionsChange = this.onConnectionsChange;
             this.onConnectionsChange = function (type, //(0: ?, 1:input, 2: output )
             slotIndex, isConnected, link, //LLink,
@@ -66,6 +89,7 @@ function createCallback(nodename, basename, inputType) {
                     return;
                 }
                 updateInputs.call(this);
+                this.removeCancel = -1;
             };
             this.onAdded = function (graph) {
                 this.tmpWidgets = this.widgets;
@@ -78,7 +102,7 @@ function createCallback(nodename, basename, inputType) {
                 }
             };
             // デフォルトの onGraphConfigured は動的なソケットを破壊するので使用しない
-            const onGraphConfiguredOriginal = this.onGraphConfigured;
+            const onGraphConfigured = this.onGraphConfigured;
             this.onGraphConfigured = function () {
                 if (this.tmpWidgets) {
                     this.widgets = this.tmpWidgets.concat(this.widgets);
