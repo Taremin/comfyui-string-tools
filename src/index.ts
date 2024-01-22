@@ -69,7 +69,7 @@ function createCallback(nodename: string, basename: string, inputType: string) {
             const onConnectInputOriginal = this.onConnectInput
             this.onConnectInput = function(targetSlot: number, type: string, output:any, originNode:any, originSlot:number) {
                 let retVal = onConnectInputOriginal ? onConnectInputOriginal.apply(this, arguments) : void 0
-                if (originNode.type === "PrimitiveNode") {
+                if (originNode.type === "PrimitiveNode" && getInputBasename(this.inputs[targetSlot]) === basename) {
                     return false
                 }
                 this.removeCancel = targetSlot
@@ -81,11 +81,14 @@ function createCallback(nodename: string, basename: string, inputType: string) {
             this.onInputDblClick = function(slot: number) {
                 if (onInputDblClickOriginal) {
                     const originalCreateNode = LiteGraph.createNode
-                    LiteGraph.createNode = function(nodeType: string) {
-                        if (nodeData !== "PrimitiveNode") {
-                            return originalCreateNode.apply(this, arguments)
+
+                    if (getInputBasename(this.inputs[slot]) === basename) {
+                        LiteGraph.createNode = function(nodeType: string) {
+                            if (nodeType !== "PrimitiveNode") {
+                                return originalCreateNode.apply(this, arguments)
+                            }
+                            return originalCreateNode.call(this, "StringToolsText")
                         }
-                        return originalCreateNode.call(this, "StringToolsText")
                     }
                     onInputDblClickOriginal.call(this, slot)
                     LiteGraph.createNode = originalCreateNode
