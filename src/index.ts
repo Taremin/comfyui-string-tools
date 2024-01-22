@@ -132,18 +132,6 @@ function createCallback(nodename: string, basename: string, inputType: string) {
                     this.widgets = this.tmpWidgets.concat(this.widgets)
                     delete this.tmpWidgets
                 }
-                if (this.widgets_values) {
-                    for (let i = 0, il = this.widgets_values.length; i < il; ++i) {
-                        const value = this.widgets_values[i]
-                        if (value === null || value === void 0) {
-                            continue
-                        }
-                        this.widgets[i].value = value
-                    }
-                }
-
-                this.setSize(this.computeSize())
-                this.setDirtyCanvas(true, true)
 
                 if (app.configuringGraph) {
                     updateInputs.call(this)
