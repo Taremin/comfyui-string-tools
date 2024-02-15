@@ -30,7 +30,9 @@ class StringToolsString:
             "required": {
                 "text": (
                     "STRING",
-                    {},
+                    {
+                        "dynamicPrompts": False,
+                    },
                 ),
             },
         }
@@ -53,7 +55,10 @@ class StringToolsText:
             "required": {
                 "text": (
                     "STRING",
-                    {"multiline": True},
+                    {
+                        "multiline": True,
+                        "dynamicPrompts": False,
+                    },
                 ),
             },
         }
