@@ -21,6 +21,13 @@
 `seed` で `text_*` の中からひとつ選択します。
 これらの入力はWidgetに変更することができません。
 
+### StringToolsBalancedChoice
+
+`seed` で `text_*` の中からひとつ選択します。
+これらの入力はWidgetに変更することができません。
+`StringToolsRandomChoice` との違いは重み付けにあります。
+`StringToolsBalancedChoice` の入力のどこかに `StringToolsRandomChoice` か `StringToolsBalancedChoice` があった場合、その有効な入力数に応じて重み付けを行い、有効な入力数が多いほど選択されやすくなります。
+
 ## ライセンス
 
 [MIT](./LICENSE)
