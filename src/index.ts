@@ -1,9 +1,10 @@
 import { app } from "/scripts/app.js"
+import { api } from "/scripts/api.js"
 import { setWidgetConfig } from "/extensions/core/widgetInputs.js"
 
 declare const LiteGraph: any
 
-function createCallback(nodename: string, basename: string, inputType: string) {
+function createCallback(nodename: string, basename: string, inputType: string, withWeights?:string[]) {
     return async function(nodeType:any, nodeData:any, app:any) {
         if (nodeData.name !== nodename) {
             return
@@ -11,6 +12,10 @@ function createCallback(nodename: string, basename: string, inputType: string) {
 
         const getInputBasename = function(input: any) {
             return input.name.split('_')[0]
+        }
+
+        const getInputExtraname = function(input: any) {
+            return input.name.split('_', 2)[1]
         }
 
         const updateInputs = function(this: any) {
@@ -138,6 +143,44 @@ function createCallback(nodename: string, basename: string, inputType: string) {
                 }
             }
 
+            if (withWeights !== void 0) {
+                this.calcNodeInputs = function(prompt: {[key: string]: {class_type: string, inputs: {[key: string]: any}}}, workflow: {nodes: any[]}) {
+                    const type = prompt[this.id].class_type
+
+                    for (const input of Object.keys(prompt[this.id].inputs)) {
+                        if (getInputBasename({name: input}) !== basename) {
+                            continue
+                        }
+                        const extraname = getInputExtraname({name: input})
+                        const walkdown = (type: string, id: string, sum: number): number => {
+                            for (const input of Object.keys(prompt[id].inputs)) {
+                                const value = prompt[id].inputs[input]
+                                let start = 0
+                                if (
+                                    withWeights.includes(prompt[id].class_type) &&
+                                    getInputBasename({name: input}) === basename
+                                ) {
+                                    start = 1
+                                }
+                                if (Array.isArray(value)) {
+                                    sum += walkdown(type, value[0], start)
+                                }
+                            }
+                            return sum
+                        }
+                        const value = prompt[this.id].inputs[input]
+                        if (Array.isArray(value)) {
+                            let sum = walkdown(type, value[0], 0)
+                            if (sum === 0) {
+                                sum = 1
+                            }
+                            const weightKey = ["weight", extraname].join('_')
+                            prompt[this.id].inputs[weightKey] = sum
+                        }
+                    }
+                }
+            }
+
             // init inputs
             if (!this.inputs) {
                 this.inputs = []
@@ -145,6 +188,17 @@ function createCallback(nodename: string, basename: string, inputType: string) {
         }
     }
 }
+
+const queuePromptOriginal = api.queuePrompt
+api.queuePrompt = (async function queuePrompt(number: number, {output, workflow}: {output: any, workflow: any}) {
+    for (const id of Object.keys(output)) {
+        const node = app.graph.getNodeById(id)
+        if (node.calcNodeInputs && typeof node.calcNodeInputs === "function") {
+            node.calcNodeInputs(output, workflow)
+        }
+    }
+    return await queuePromptOriginal(number, {output, workflow})
+}).bind(api)
 
 app.registerExtension({
     name: "Taremin.StringToolsConcat",
@@ -154,4 +208,9 @@ app.registerExtension({
 app.registerExtension({
     name: "Taremin.StringToolsRandomChoice",
     beforeRegisterNodeDef: createCallback("StringToolsRandomChoice", "text", "STRING"),
+})
+
+app.registerExtension({
+    name: "Taremin.StringToolsBalancedChoice",
+    beforeRegisterNodeDef: createCallback("StringToolsBalancedChoice", "text", "STRING", ["StringToolsRandomChoice", "StringToolsBalancedChoice"]),
 })

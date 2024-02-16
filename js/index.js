@@ -1,12 +1,16 @@
 import { app } from "/scripts/app.js";
+import { api } from "/scripts/api.js";
 import { setWidgetConfig } from "/extensions/core/widgetInputs.js";
-function createCallback(nodename, basename, inputType) {
+function createCallback(nodename, basename, inputType, withWeights) {
     return async function (nodeType, nodeData, app) {
         if (nodeData.name !== nodename) {
             return;
         }
         const getInputBasename = function (input) {
             return input.name.split('_')[0];
+        };
+        const getInputExtraname = function (input) {
+            return input.name.split('_', 2)[1];
         };
         const updateInputs = function () {
             // remove empty inputs
@@ -114,6 +118,40 @@ function createCallback(nodename, basename, inputType) {
                     updateInputs.call(this);
                 }
             };
+            if (withWeights !== void 0) {
+                this.calcNodeInputs = function (prompt, workflow) {
+                    const type = prompt[this.id].class_type;
+                    for (const input of Object.keys(prompt[this.id].inputs)) {
+                        if (getInputBasename({ name: input }) !== basename) {
+                            continue;
+                        }
+                        const extraname = getInputExtraname({ name: input });
+                        const walkdown = (type, id, sum) => {
+                            for (const input of Object.keys(prompt[id].inputs)) {
+                                const value = prompt[id].inputs[input];
+                                let start = 0;
+                                if (withWeights.includes(prompt[id].class_type) &&
+                                    getInputBasename({ name: input }) === basename) {
+                                    start = 1;
+                                }
+                                if (Array.isArray(value)) {
+                                    sum += walkdown(type, value[0], start);
+                                }
+                            }
+                            return sum;
+                        };
+                        const value = prompt[this.id].inputs[input];
+                        if (Array.isArray(value)) {
+                            let sum = walkdown(type, value[0], 0);
+                            if (sum === 0) {
+                                sum = 1;
+                            }
+                            const weightKey = ["weight", extraname].join('_');
+                            prompt[this.id].inputs[weightKey] = sum;
+                        }
+                    }
+                };
+            }
             // init inputs
             if (!this.inputs) {
                 this.inputs = [];
@@ -121,6 +159,16 @@ function createCallback(nodename, basename, inputType) {
         };
     };
 }
+const queuePromptOriginal = api.queuePrompt;
+api.queuePrompt = (async function queuePrompt(number, { output, workflow }) {
+    for (const id of Object.keys(output)) {
+        const node = app.graph.getNodeById(id);
+        if (node.calcNodeInputs && typeof node.calcNodeInputs === "function") {
+            node.calcNodeInputs(output, workflow);
+        }
+    }
+    return await queuePromptOriginal(number, { output, workflow });
+}).bind(api);
 app.registerExtension({
     name: "Taremin.StringToolsConcat",
     beforeRegisterNodeDef: createCallback("StringToolsConcat", "text", "STRING"),
@@ -128,4 +176,8 @@ app.registerExtension({
 app.registerExtension({
     name: "Taremin.StringToolsRandomChoice",
     beforeRegisterNodeDef: createCallback("StringToolsRandomChoice", "text", "STRING"),
+});
+app.registerExtension({
+    name: "Taremin.StringToolsBalancedChoice",
+    beforeRegisterNodeDef: createCallback("StringToolsBalancedChoice", "text", "STRING", ["StringToolsRandomChoice", "StringToolsBalancedChoice"]),
 });

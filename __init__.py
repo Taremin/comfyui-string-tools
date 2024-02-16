@@ -1,6 +1,11 @@
 import random
 
 
+class StringToolsOptionalDict(dict):
+    def __contains__(self, key: object) -> bool:
+        return True
+
+
 def sort_kwargs_value(basename, kwargs, separator="_"):
     sorted_args = {}
     basename_dict = {}
@@ -15,9 +20,7 @@ def sort_kwargs_value(basename, kwargs, separator="_"):
         basename_dict.items(), key=lambda kv: int(kv[0].split(separator)[-1])
     )
 
-    return list(sorted_args.values()) + list(
-        map(lambda kv: kv[1], sorted_basename_dict)
-    )
+    return list(map(lambda kv: kv[1], sorted_basename_dict))
 
 
 class StringToolsString:
@@ -148,10 +151,31 @@ class StringToolsRandomChoice:
         return (choice,)
 
 
+class StringToolsBalancedChoice(StringToolsRandomChoice):
+    @classmethod
+    def INPUT_TYPES(s):
+        input_types = super().INPUT_TYPES()
+        input_types["optional"] = StringToolsOptionalDict()
+        return input_types
+
+    def process(self, *args, **kwargs):
+        seed = 0
+        if "seed" in kwargs:
+            seed = kwargs["seed"]
+            del kwargs["seed"]
+
+        values = sort_kwargs_value("text", kwargs)
+        weights = sort_kwargs_value("weight", kwargs)
+        random.seed(seed)
+        choice = random.choices(values, weights=weights)[0]
+        return (choice,)
+
+
 NODE_CLASS_MAPPINGS = {
     "StringToolsString": StringToolsString,
     "StringToolsText": StringToolsText,
     "StringToolsConcat": StringToolsConcat,
     "StringToolsRandomChoice": StringToolsRandomChoice,
+    "StringToolsBalancedChoice": StringToolsBalancedChoice,
 }
 WEB_DIRECTORY = "./js"
