@@ -176,6 +176,8 @@ function createCallback(nodename: string, basename: string, inputType: string, w
                             }
                             const weightKey = ["weight", extraname].join('_')
                             prompt[this.id].inputs[weightKey] = sum
+                            prompt[this.id].inputs["title"] = this.title
+                            prompt[this.id].inputs["id"] = this.id
                         }
                     }
                 }
@@ -197,7 +199,7 @@ api.queuePrompt = (async function queuePrompt(number: number, {output, workflow}
             node.calcNodeInputs(output, workflow)
         }
     }
-    return await queuePromptOriginal(number, {output, workflow})
+    return await queuePromptOriginal.call(api, number, {output, workflow})
 }).bind(api)
 
 app.registerExtension({
@@ -207,7 +209,7 @@ app.registerExtension({
 
 app.registerExtension({
     name: "Taremin.StringToolsRandomChoice",
-    beforeRegisterNodeDef: createCallback("StringToolsRandomChoice", "text", "STRING"),
+    beforeRegisterNodeDef: createCallback("StringToolsRandomChoice", "text", "STRING", ["StringToolsRandomChoice"]),
 })
 
 app.registerExtension({

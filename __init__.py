@@ -2,8 +2,20 @@ import random
 
 
 class StringToolsOptionalDict(dict):
+    getitem_default_callback = None
+
+    def __init__(self, *args, get_default_callback=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.getitem_default_callback = get_default_callback
+
     def __contains__(self, key: object) -> bool:
         return True
+
+    def __getitem__(self, key):
+        if callable(self.getitem_default_callback):
+            return super().get(key, self.getitem_default_callback(key))
+        else:
+            return super().get(key, None)
 
 
 def sort_kwargs_value(basename, kwargs, separator="_"):
@@ -155,7 +167,11 @@ class StringToolsBalancedChoice(StringToolsRandomChoice):
     @classmethod
     def INPUT_TYPES(s):
         input_types = super().INPUT_TYPES()
-        input_types["optional"] = StringToolsOptionalDict()
+        input_types["optional"] = StringToolsOptionalDict(
+            get_default_callback=lambda key: (
+                ("INT") if key.startswith("weight_") else None,
+            )
+        )
         return input_types
 
     def process(self, *args, **kwargs):
