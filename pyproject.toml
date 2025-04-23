@@ -1,0 +1,14 @@
+[project]
+name = "comfyui-string-tools"
+description = " This extension provides the StringToolsConcat node, which concatenates multiple texts, and the StringToolsRandomChoice node, which selects one randomly from multiple texts."
+version = "1.0.0"
+license = "LICENSE"
+
+[project.urls]
+Repository = "https://github.com/Taremin/comfyui-string-tools"
+#  Used by Comfy Registry https://comfyregistry.org
+
+[tool.comfy]
+PublisherId = ""
+DisplayName = "comfyui-string-tools"
+Icon = ""
