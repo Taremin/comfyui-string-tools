@@ -11,6 +11,10 @@
 
 ## 機能
 
+### StringToolsSeed 
+
+`StringToolsRandomChoice` と `StringToolsBalancedChoice` では `seed` に `PrimitiveNode` を受け付けていないため、`seed` の生成に使用するノードです。
+
 ### StringToolsConcat 
 
 `separator` で `text_*` を結合します。
