@@ -1,4 +1,5 @@
 import random
+import re
 
 
 class StringToolsOptionalDict(dict):
@@ -33,6 +34,56 @@ def sort_kwargs_value(basename, kwargs, separator="_"):
     )
 
     return list(map(lambda kv: kv[1], sorted_basename_dict))
+
+
+def get_node(kwargs):
+    extra_pnginfo = kwargs.get("extra_pnginfo", None)
+    unique_id = kwargs.get("unique_id", None)
+
+    if extra_pnginfo is None or unique_id is None:
+        print(
+            re.sub(
+                pattern="^\s*> ",
+                repl="",
+                string="""
+                > "extra_pnginfo" or "unique_id" not found in kwargs.
+                > please add to INPUT_TYPES:
+                >     "hidden": {
+                >        "extra_pnginfo": "EXTRA_PNGINFO",
+                >        "unique_id": "UNIQUE_ID",
+                >     }
+                """,
+                flags=re.MULTILINE,
+            )
+        )
+        return None
+
+    workflow = extra_pnginfo["workflow"]
+    node_path = [int(p) for p in unique_id.split(":")]
+
+    subgraphs = workflow["definitions"]["subgraphs"]
+    subgraphs_by_id = {}
+    for subgraph in subgraphs:
+        subgraphs_by_id[subgraph["id"]] = subgraph
+
+    def walkdown_node_path(current_path, graph):
+        nodes_by_id = {}
+        for n in graph["nodes"]:
+            nodes_by_id[n["id"]] = n
+        node = nodes_by_id[current_path[0]]
+
+        if node["type"] in subgraphs_by_id:
+            return walkdown_node_path(current_path[1:], subgraphs_by_id[node["type"]])
+        else:
+            return node
+
+    node = walkdown_node_path(node_path, workflow)
+
+    return node
+
+
+def format(num):
+    return "{:6.2f}".format(num)
 
 
 class StringToolsSeed:
@@ -168,6 +219,9 @@ class StringToolsRandomChoice:
                     "STRING",
                     {"forceInput": True},
                 ),
+                "prompt": "PROMPT",
+                "extra_pnginfo": "EXTRA_PNGINFO",
+                "unique_id": "UNIQUE_ID",
             },
         }
 
@@ -188,6 +242,10 @@ class StringToolsRandomChoice:
 
 
 class StringToolsBalancedChoice(StringToolsRandomChoice):
+    total_count = {}
+    counts = {}
+    debug = True
+
     @classmethod
     def INPUT_TYPES(s):
         input_types = super().INPUT_TYPES()
@@ -204,11 +262,36 @@ class StringToolsBalancedChoice(StringToolsRandomChoice):
             seed = kwargs["seed"]
             del kwargs["seed"]
 
+        node = get_node(kwargs)
+        title = node.get("title", node.get("type", None))
         values = sort_kwargs_value("text", kwargs)
         weights = sort_kwargs_value("weight", kwargs)
         random.seed(seed)
-        choice = random.choices(values, weights=weights)[0]
-        return (choice,)
+
+        id = node.get("id", None)
+        counts = self.counts.get(id, None)
+        if counts is None:
+            counts = self.counts[id] = {}
+        total_count = self.total_count.get(id, None)
+        if total_count is None:
+            total_count = self.total_count[id] = 0
+
+        choice_idx = random.choices(range(len(values)), weights=weights)[0]
+        choice_text = "_".join(["text", str(choice_idx)])
+        counts[choice_text] = counts.get(choice_text, 0) + 1
+        self.total_count[id] += 1
+        total_weight = sum(weights)
+
+        if self.debug or kwargs.get("debug", False):
+            print(f"#{id} {title} (Seed:{seed}):")
+            for idx in range(len(values)):
+                text = "_".join(["text", str(idx)])
+                count = counts.get(text, 0)
+                print(
+                    f"\tInput:{text} Weight:{weights[idx]} ({format(weights[idx] / total_weight * 100)}%) - Count:{count} ({format(count / self.total_count[id] * 100)}%)"
+                )
+
+        return (values[choice_idx],)
 
 
 NODE_CLASS_MAPPINGS = {
