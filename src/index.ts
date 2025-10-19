@@ -198,7 +198,7 @@ function createCallback(nodename: string, basename: string, inputType: string, w
                             node.inputs[weightKey] = sum
                             node.inputs["title"] = this.title
                             node.inputs["id"] = this.id
-                            node.inputs["debug"] = app.extensionManager.setting.get("StringTools.StringToolsBalancedChoice.debug"),
+                            node.inputs["debug"] = app.extensionManager.setting.get("StringTools.StringToolsBalancedChoice.debug")
                         }
                     }
                 }
