@@ -61,7 +61,7 @@ def get_node(kwargs):
     workflow = extra_pnginfo["workflow"]
     node_path = [int(p) for p in unique_id.split(":")]
 
-    subgraphs = workflow["definitions"]["subgraphs"]
+    subgraphs = workflow["definitions"]["subgraphs"] if "definitions" in workflow and "subgraphs" in workflow["definitions"] else []
     subgraphs_by_id = {}
     for subgraph in subgraphs:
         subgraphs_by_id[subgraph["id"]] = subgraph
