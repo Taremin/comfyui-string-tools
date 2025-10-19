@@ -86,7 +86,7 @@ function createCallback(nodename: string, basename: string, inputType: string, w
             const onConnectInputOriginal = this.onConnectInput
             this.onConnectInput = function(targetSlot: number, type: string, output:any, originNode:any, originSlot:number) {
                 let retVal = onConnectInputOriginal ? onConnectInputOriginal.apply(this, arguments) : void 0
-                if (originNode.type === "PrimitiveNode") {// && getInputBasename(this.inputs[targetSlot]) === basename) {
+                if (originNode.type === "PrimitiveNode") {
                     return false
                 }
                 this.removeCancel = targetSlot
