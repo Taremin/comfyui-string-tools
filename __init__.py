@@ -244,7 +244,7 @@ class StringToolsRandomChoice:
 class StringToolsBalancedChoice(StringToolsRandomChoice):
     total_count = {}
     counts = {}
-    debug = True
+    debug = False
 
     @classmethod
     def INPUT_TYPES(s):
