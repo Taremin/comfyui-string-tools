@@ -35,6 +35,30 @@ def sort_kwargs_value(basename, kwargs, separator="_"):
     return list(map(lambda kv: kv[1], sorted_basename_dict))
 
 
+class StringToolsSeed:
+    RETURN_TYPES = ("INT",)
+    FUNCTION = "process"
+    CATEGORY = "string-tools"
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "seed": (
+                    "INT",
+                    {
+                        "default": 0,
+                        "min": 0,
+                        "max": 0xffffffffffffffff,
+                    }
+                ),
+            }
+        }
+
+    def process(self, seed):
+        return (seed,)
+
+
 class StringToolsString:
     def __init__(self):
         pass
@@ -188,6 +212,7 @@ class StringToolsBalancedChoice(StringToolsRandomChoice):
 
 
 NODE_CLASS_MAPPINGS = {
+    "StringToolsSeed": StringToolsSeed,
     "StringToolsString": StringToolsString,
     "StringToolsText": StringToolsText,
     "StringToolsConcat": StringToolsConcat,
