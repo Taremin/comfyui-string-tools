@@ -192,7 +192,7 @@ class StringToolsConcat:
             separator = kwargs["separator"]
             del kwargs["separator"]
         else:
-            separator = ""
+            separator = "\n"
         return (separator.join(sort_kwargs_value("text", kwargs)),)
 
 
