@@ -29,7 +29,7 @@ function createCallback(nodename, basename, inputType, withWeights) {
                     const input = this.inputs[i];
                     if (getInputBasename(input) === basename) {
                         this.inputs[i].name = [basename, j++].join('_');
-                        this.widget = void 0;
+                        this.inputs[i].widget = void 0;
                     }
                 }
                 // create empty input
