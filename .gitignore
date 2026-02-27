@@ -1,4 +1,15 @@
 node_modules/
+.gitignore/comfyui-string-tools-*.zip
+
+# Test settings
+test_settings.json
 settings/*
 *.pyc
-.vscode/*
+# Agent rules
+.agent/
+!.agent/rules/
+tests/test_settings.json
+tests/*.html
+tests/*.png
+tests/*.log
+tmp/
