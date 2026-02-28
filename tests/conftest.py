@@ -125,6 +125,15 @@ def comfyui_server(test_settings):
     yield base_url
 
     print("\nShutting down ComfyUI server...")
+    # Flush remaining logs
+    time.sleep(1) # wait for any trailing errors
+    try:
+        while not output_queue.empty():
+            line = output_queue.get_nowait()
+            print(f"ComfyUI: {line.strip()}")
+    except queue.Empty:
+        pass
+
     process.terminate()
     try:
         process.wait(timeout=10)
