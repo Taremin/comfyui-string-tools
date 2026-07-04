@@ -6,7 +6,6 @@ on:
       - master
     paths-ignore:
       - 'js/index.js'
-      - '.github/workflows/**'
 
 permissions:
   contents: write
@@ -87,9 +86,13 @@ jobs:
   trigger-release:
     needs: bump-version
     uses: ./.github/workflows/release.yml
+    with:
+      tag: ${{ needs.bump-version.outputs.tag }}
     secrets: inherit
 
   trigger-publish:
     needs: bump-version
     uses: ./.github/workflows/publish.yml
+    with:
+      tag: ${{ needs.bump-version.outputs.tag }}
     secrets: inherit
