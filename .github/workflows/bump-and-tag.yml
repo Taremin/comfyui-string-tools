@@ -1,0 +1,94 @@
+name: Bump Version and Push Tag
+
+on:
+  push:
+    branches:
+      - master
+    paths-ignore:
+      - 'js/index.js'
+      - '.github/workflows/**'
+
+permissions:
+  contents: write
+
+jobs:
+  bump-version:
+    runs-on: ubuntu-latest
+    if: ${{ github.repository_owner == 'Taremin' }}
+    outputs:
+      version: ${{ steps.bump.outputs.version }}
+      tag: ${{ steps.bump.outputs.tag }}
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Auto-determine and bump version
+        id: bump
+        run: |
+          python -c '
+          import re, json, subprocess, os
+          commit_msg = subprocess.check_output(["git", "log", "-1", "--pretty=%B"]).decode("utf-8")
+          is_minor = "feat:" in commit_msg or "feat(" in commit_msg
+          
+          with open("pyproject.toml", "r", encoding="utf-8") as f:
+              content = f.read()
+          
+          version_match = re.search(r"version\s*=\s*\"([^\"]+)\"", content)
+          current_version = version_match.group(1)
+          major, minor, patch = map(int, current_version.split("."))
+          
+          if is_minor:
+              minor += 1
+              patch = 0
+          else:
+              patch += 1
+              
+          next_version = f"{major}.{minor}.{patch}"
+          print(f"Current version: {current_version} -> Next version: {next_version}")
+          
+          new_content = re.sub(r"(version\s*=\s*\")[^\"]+(\")", rf"\g<1>{next_version}\g<2>", content)
+          with open("pyproject.toml", "w", encoding="utf-8") as f:
+              f.write(new_content)
+              
+          with open("package.json", "r", encoding="utf-8") as f:
+              pkg = json.load(f)
+          pkg["version"] = next_version
+          with open("package.json", "w", encoding="utf-8") as f:
+              json.dump(pkg, f, indent=2)
+              
+          with open(os.environ["GITHUB_OUTPUT"], "a") as out:
+              out.write(f"version={next_version}\n")
+              out.write(f"tag=v{next_version}\n")
+          '
+
+      - name: Commit and Push version bump
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add pyproject.toml package.json
+          git commit -m "chore: release version ${{ steps.bump.outputs.version }} [skip ci]"
+          git push origin master
+
+      - name: Create and push git tag
+        run: |
+          git tag ${{ steps.bump.outputs.tag }}
+          git push origin ${{ steps.bump.outputs.tag }}
+
+  # タグプッシュ後にリリースおよびレジストリ登録のジョブを連動して呼び出す
+  trigger-release:
+    needs: bump-version
+    uses: ./.github/workflows/release.yml
+    secrets: inherit
+
+  trigger-publish:
+    needs: bump-version
+    uses: ./.github/workflows/publish.yml
+    secrets: inherit
