@@ -44,18 +44,21 @@ def comfyui_server(test_settings):
 
     # ComfyUIの起動コマンド (E2Eテスト用に軽量化)
     cmd = [
-        str(python_exe), "main.py", 
+        str(python_exe), "-u", "main.py", 
         "--port", str(port), 
         "--listen", "127.0.0.1",
         "--cpu",
         "--disable-smart-memory",
-        "--disable-xformers"
+        "--disable-xformers",
+        "--disable-all-custom-nodes",
+        "--whitelist-custom-nodes", "comfyui-string-tools"
     ]
     
     # 環境変数の準備
     env = os.environ.copy()
     # ComfyUIのパスを絶対パスでPYTHONPATHに追加（Stability Matrix環境で必要）
     env["PYTHONPATH"] = str(comfyui_path.absolute())
+    env["COMFYUI_TEST_MODE"] = "true"
 
     print(f"\nStarting ComfyUI server: {comfyui_path} using {python_exe} on port {port}")
     

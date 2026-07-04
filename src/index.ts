@@ -4,7 +4,7 @@ import { setWidgetConfig } from "/extensions/core/widgetInputs.js"
 
 declare const LiteGraph: any
 
-function createCallback(nodename: string, basename: string, inputType: string, withWeights?:string[]) {
+function createCallback(nodename: string, basename: string, inputType: string) {
     return async function(nodeType:any, nodeData:any, app:any) {
         if (nodeData.name !== nodename) {
             return
@@ -12,10 +12,6 @@ function createCallback(nodename: string, basename: string, inputType: string, w
 
         const getInputBasename = function(input: any) {
             return input.name.split('_')[0]
-        }
-
-        const getInputExtraname = function(input: any) {
-            return input.name.split('_', 2)[1]
         }
 
         const updateInputs = function(this: any) {
@@ -155,55 +151,6 @@ function createCallback(nodename: string, basename: string, inputType: string, w
                 }
             }
 
-            if (withWeights !== void 0) {
-                this.calcNodeInputs = function(prompt: {[key: string]: {class_type: string, inputs: {[key: string]: any}}}, workflow: {nodes: any[]}) {
-                    const flattenPrompt = {} as typeof prompt
-                    for (const [key, value] of Object.entries(prompt)) {
-                        const flattenId = key.split(':').at(-1)!
-                        flattenPrompt[flattenId] = value as any
-                    }
-
-                    const node = flattenPrompt[this.id]
-                    const type = node.class_type
-
-                    for (const input of Object.keys(node.inputs)) {
-                        if (getInputBasename({name: input}) !== basename) {
-                            continue
-                        }
-                        const extraname = getInputExtraname({name: input})
-                        const walkdown = (type: string, id: string, sum: number): number => {
-                            const node = flattenPrompt[id.split(':').at(-1)!]
-                            for (const input of Object.keys(node.inputs)) {
-                                const value = node.inputs[input]
-                                let start = 0
-                                if (
-                                    withWeights.includes(node.class_type) &&
-                                    getInputBasename({name: input}) === basename
-                                ) {
-                                    start = 1
-                                }
-                                if (Array.isArray(value)) {
-                                    sum += walkdown(type, value[0], start)
-                                }
-                            }
-                            return sum
-                        }
-                        const value = node.inputs[input]
-                        if (Array.isArray(value)) {
-                            let sum = walkdown(type, value[0], 0)
-                            if (sum === 0) {
-                                sum = 1
-                            }
-                            const weightKey = ["weight", extraname].join('_')
-                            node.inputs[weightKey] = sum
-                            node.inputs["title"] = this.title
-                            node.inputs["id"] = this.id
-                            node.inputs["debug"] = app.extensionManager.setting.get("StringTools.StringToolsBalancedChoice.debug")
-                        }
-                    }
-                }
-            }
-
             // init inputs
             if (!this.inputs) {
                 this.inputs = []
@@ -212,36 +159,6 @@ function createCallback(nodename: string, basename: string, inputType: string, w
     }
 }
 
-const queuePromptOriginal = api.queuePrompt
-api.queuePrompt = (async function queuePrompt(number: number, {output, workflow}: {output: any, workflow: any}) {
-    for (const idPath of Object.keys(output)) {
-        const path = idPath.split(":")
-        let node
-        if (path.length === 1) {
-            const id = path[0]
-            node = app.graph.getNodeById(id)
-
-        } else {
-            const nodePath = app.graph.resolveSubgraphIdPath(path.slice(0, -1))
-            const id = path.at(-1)
-            const subgraphNode = nodePath.at(-1)
-            if (subgraphNode.isSubgraphNode()) {
-                node = subgraphNode.subgraph.getNodeById(id)
-            } else {
-                console.error("last nodePath is not subgraph")
-            }
-        }
-        if (!node) {
-            console.error("output node not found:", idPath)
-            continue
-        }
-        if (node.calcNodeInputs && typeof node.calcNodeInputs === "function") {
-            node.calcNodeInputs(output, workflow)
-        }
-    }
-    return await queuePromptOriginal.call(api, number, {output, workflow})
-}).bind(api)
-
 app.registerExtension({
     name: "Taremin.StringToolsConcat",
     beforeRegisterNodeDef: createCallback("StringToolsConcat", "text", "STRING"),
@@ -249,7 +166,7 @@ app.registerExtension({
 
 app.registerExtension({
     name: "Taremin.StringToolsRandomChoice",
-    beforeRegisterNodeDef: createCallback("StringToolsRandomChoice", "text", "STRING", ["StringToolsRandomChoice"]),
+    beforeRegisterNodeDef: createCallback("StringToolsRandomChoice", "text", "STRING"),
 })
 
 app.registerExtension({
@@ -262,5 +179,12 @@ app.registerExtension({
             defaultValue: false,
         }
     ],
-    beforeRegisterNodeDef: createCallback("StringToolsBalancedChoice", "text", "STRING", ["StringToolsRandomChoice", "StringToolsBalancedChoice"]),
+    beforeRegisterNodeDef: (nodeType: any, nodeData: any, app: any) => {
+        createCallback("StringToolsBalancedChoice", "text", "STRING")(nodeType, nodeData, app);
+    },
 })
+
+app.registerExtension({
+    name: "Taremin.StringToolsStringsToList",
+    beforeRegisterNodeDef: createCallback("StringToolsStringsToList", "text", "STRING"),
+});

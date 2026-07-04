@@ -1,38 +1,38 @@
 import random
 import re
 
-
+# 真の動的入力を実現するための辞書クラス
 class StringToolsOptionalDict(dict):
-    getitem_default_callback = None
-
-    def __init__(self, *args, get_default_callback=None, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.getitem_default_callback = get_default_callback
-
     def __contains__(self, key: object) -> bool:
-        return True
+        # text_NN 形式のキーなら常に存在するとみなす
+        if isinstance(key, str) and re.match(r"text_\d+", key):
+            return True
+        return super().__contains__(key)
 
     def __getitem__(self, key):
-        if callable(self.getitem_default_callback):
-            return super().get(key, self.getitem_default_callback(key))
-        else:
-            return super().get(key, None)
+        if isinstance(key, str) and re.match(r"text_\d+", key):
+            return super().get(key, ("STRING", {"forceInput": True}))
+        return super().__getitem__(key)
+
+    def get(self, key, default=None):
+        if isinstance(key, str) and re.match(r"text_\d+", key):
+            return super().get(key, ("STRING", {"forceInput": True}))
+        return super().get(key, default)
 
 
-def sort_kwargs_value(basename, kwargs, separator="_"):
-    sorted_args = {}
+def sort_kwargs_value(basename, kwargs):
     basename_dict = {}
-
     for key, value in kwargs.items():
-        if separator.join(key.split(separator)[:-1]) != basename:
-            sorted_args[key] = value
-        else:
-            basename_dict[key] = value
+        if key.startswith(basename) and value is not None:
+            parts = key.split("_")
+            if len(parts) > 1 and parts[1].isdigit():
+                # value がリストの場合は最初の要素を取り出し、そうでなければそのまま文字列化
+                if isinstance(value, list):
+                    basename_dict[int(parts[1])] = str(value[0]) if value else ""
+                else:
+                    basename_dict[int(parts[1])] = str(value)
 
-    sorted_basename_dict = sorted(
-        basename_dict.items(), key=lambda kv: int(kv[0].split(separator)[-1])
-    )
-
+    sorted_basename_dict = sorted(basename_dict.items())
     return list(map(lambda kv: kv[1], sorted_basename_dict))
 
 
@@ -40,148 +40,119 @@ def get_node(kwargs):
     extra_pnginfo = kwargs.get("extra_pnginfo", None)
     unique_id = kwargs.get("unique_id", None)
 
-    # INPUT_IS_LIST = True のノードではhidden入力もリストにラップされるためアンラップ
     if isinstance(extra_pnginfo, list):
-        extra_pnginfo = extra_pnginfo[0]
+        extra_pnginfo = extra_pnginfo[0] if extra_pnginfo else None
     if isinstance(unique_id, list):
-        unique_id = unique_id[0]
+        unique_id = unique_id[0] if unique_id else None
 
     if extra_pnginfo is None or unique_id is None:
-        print(
-            re.sub(
-                pattern="^\s*> ",
-                repl="",
-                string="""
-                > "extra_pnginfo" or "unique_id" not found in kwargs.
-                > please add to INPUT_TYPES:
-                >     "hidden": {
-                >        "extra_pnginfo": "EXTRA_PNGINFO",
-                >        "unique_id": "UNIQUE_ID",
-                >     }
-                """,
-                flags=re.MULTILINE,
-            )
-        )
         return None
 
-    workflow = extra_pnginfo["workflow"]
-    node_path = [int(p) for p in unique_id.split(":")]
+    workflow = extra_pnginfo.get("workflow", None)
+    if workflow is None:
+        return None
 
-    subgraphs = workflow["definitions"]["subgraphs"] if "definitions" in workflow and "subgraphs" in workflow["definitions"] else []
-    subgraphs_by_id = {}
-    for subgraph in subgraphs:
-        subgraphs_by_id[subgraph["id"]] = subgraph
+    node_path = [unique_id]
 
-    def walkdown_node_path(current_path, graph):
-        nodes_by_id = {}
-        for n in graph["nodes"]:
-            nodes_by_id[n["id"]] = n
-        node = nodes_by_id.get(current_path[0])
+    def walkdown_node_path(current_path, workflow):
+        if not current_path: return None
+        node_id = current_path[0]
+        node = None
+        for n in workflow.get("nodes", []):
+            if str(n["id"]) == str(node_id):
+                node = n
+                break
+
         if node is None:
             return None
 
-        if node["type"] in subgraphs_by_id:
-            return walkdown_node_path(current_path[1:], subgraphs_by_id[node["type"]])
-        else:
-            return node
+        if node["type"] == "Subgraph" or "subgraph" in node:
+            subgraphs_by_id = workflow.get("definitions", {})
+            if node["type"] in subgraphs_by_id:
+                return walkdown_node_path(current_path[1:], subgraphs_by_id[node["type"]])
+        
+        return node
 
     node = walkdown_node_path(node_path, workflow)
-
     return node
 
 
-def get_input_basename(input_name):
-    return input_name.split('_')[0]
-
-def get_input_extraname(input_name):
-    parts = input_name.split('_', 1)
-    return parts[1] if len(parts) > 1 else ""
-
-def calculate_weights_from_prompt(prompt, target_node_id, with_weights_classes, basename="text"):
+def calculate_weights_from_prompt(prompt, target_node_id, with_weights_classes, weight_prefix="text"):
+    # JS 実装 (index.ts) と同様に ID をフラット化してマッチングするための前処理
+    # 末尾の数値IDをキーにしたマップを作成する
     flatten_prompt = {}
-    for key, value in prompt.items():
-        flatten_id = key.split(':')[-1]
-        flatten_prompt[flatten_id] = value
+    for k, v in prompt.items():
+        flatten_id = str(k).split(':')[-1]
+        flatten_prompt[flatten_id] = v
 
-    if str(target_node_id) not in flatten_prompt:
-        return {}
+    # ターゲットIDも同様に正規化
+    target_id_str = str(target_node_id).split(':')[-1]
 
-    node = flatten_prompt[str(target_node_id)]
-    weights_result = {}
-
-    def walkdown(type_name, id_str, current_sum):
-        target_node = flatten_prompt.get(str(id_str.split(':')[-1]))
-        if not target_node:
-            return current_sum
+    # 再帰的にリーフノードの合計数を数える内部関数
+    def count_leaves(current_id):
+        curr_id_str = str(current_id).split(':')[-1]
+        if not curr_id_str or curr_id_str not in flatten_prompt:
+            return 1
         
-        for input_name, value in target_node.get("inputs", {}).items():
-            if get_input_basename(input_name) != basename:
-                continue
-
-            start = 0
-            if target_node.get("class_type") in with_weights_classes:
-                start = 1
-            if isinstance(value, list) and len(value) > 0:
-                current_sum += walkdown(target_node.get("class_type"), value[0], start)
-        return current_sum
-
-    for input_name, value in node.get("inputs", {}).items():
-        if get_input_basename(input_name) != basename:
-            continue
+        node_info = flatten_prompt[curr_id_str]
+        class_type = node_info.get("class_type")
         
-        extraname = get_input_extraname(input_name)
-        if isinstance(value, list) and len(value) > 0:
-            total_sum = walkdown(node.get("class_type"), value[0], 0)
-            if total_sum == 0:
-                total_sum = 1
-            weights_result[f"weight_{extraname}"] = total_sum
+        # ターゲットクラスの場合
+        if class_type in with_weights_classes:
+            node_inputs = node_info.get("inputs", {})
+            total = 0
+            for key, value in node_inputs.items():
+                if key.startswith(weight_prefix):
+                    if isinstance(value, list) and len(value) >= 2:
+                        total += count_leaves(value[0])
+                    else:
+                        total += 1
+                elif key == "text_list":
+                    if isinstance(value, list) and len(value) >= 2:
+                        total += count_leaves(value[0])
+                    else:
+                        total += 1
+            return max(1, total)
+        
+        # 中間ノードの場合は全入力を再帰探索
+        node_inputs = node_info.get("inputs", {})
+        total = 0
+        has_connections = False
+        for key, value in node_inputs.items():
+            if isinstance(value, list) and len(value) >= 2:
+                has_connections = True
+                total += count_leaves(value[0])
+        
+        if not has_connections:
+            return 1
+        return max(1, total)
 
-    return weights_result
+    weights = {}
+    main_node = flatten_prompt.get(target_id_str)
+    if not main_node:
+        return weights
 
-
-def format(num):
-    return "{:6.2f}".format(num)
-
-
-class StringToolsSeed:
-    RETURN_TYPES = ("INT",)
-    FUNCTION = "process"
-    CATEGORY = "string-tools"
-
-    @classmethod
-    def INPUT_TYPES(cls):
-        return {
-            "required": {
-                "seed": (
-                    "INT",
-                    {
-                        "default": 0,
-                        "min": 0,
-                        "max": 0xffffffffffffffff,
-                    }
-                ),
-            }
-        }
-
-    def process(self, seed):
-        return (seed,)
+    main_inputs = main_node.get("inputs", {})
+    for key, value in main_inputs.items():
+        if key.startswith(weight_prefix) or key == "text_list":
+            if isinstance(value, list) and len(value) >= 2:
+                weights[key] = count_leaves(value[0])
+            else:
+                weights[key] = 1
+    
+    return weights
 
 
 class StringToolsString:
-    def __init__(self):
-        pass
-
     @classmethod
     def INPUT_TYPES(s):
         return {
             "required": {
                 "text": (
                     "STRING",
-                    {
-                        "dynamicPrompts": False,
-                    },
+                    {"default": "", "multiline": False, "dynamicPrompts": False},
                 ),
-            },
+            }
         }
 
     RETURN_TYPES = ("STRING",)
@@ -193,21 +164,15 @@ class StringToolsString:
 
 
 class StringToolsText:
-    def __init__(self):
-        pass
-
     @classmethod
     def INPUT_TYPES(s):
         return {
             "required": {
                 "text": (
                     "STRING",
-                    {
-                        "multiline": True,
-                        "dynamicPrompts": False,
-                    },
+                    {"default": "", "multiline": True, "dynamicPrompts": False},
                 ),
-            },
+            }
         }
 
     RETURN_TYPES = ("STRING",)
@@ -219,93 +184,15 @@ class StringToolsText:
 
 
 class StringToolsConcat:
-    def __init__(self):
-        pass
-
-    @classmethod
-    def INPUT_TYPES(s):
-        return {
-            "required": {},
-            "optional": {
-                "separator": (
-                    "STRING",
-                    {"forceInput": True},
-                ),
-            },
-            "hidden": {
-                "text": (
-                    "STRING",
-                    {"forceInput": True},
-                ),
-            },
-        }
-
-    RETURN_TYPES = ("STRING",)
-    FUNCTION = "process"
-    CATEGORY = "string-tools"
-
-    def process(self, *args, **kwargs):
-        if "separator" in kwargs:
-            separator = kwargs["separator"]
-            del kwargs["separator"]
-        else:
-            separator = "\n"
-        return (separator.join(sort_kwargs_value("text", kwargs)),)
-
-class StringToolsConcatList:
-    def __init__(self):
-        pass
-
     @classmethod
     def INPUT_TYPES(s):
         return {
             "required": {
-                "text_list": (
-                    "STRING",
-                    {"forceInput": True},
-                ),
             },
-            "optional": {
-                "separator": (
-                    "STRING",
-                    {"forceInput": True},
-                ),
-            },
-        }
-
-    INPUT_IS_LIST = True
-    RETURN_TYPES = ("STRING",)
-    FUNCTION = "process"
-    CATEGORY = "string-tools"
-
-    def process(self, text_list, separator=None):
-        sep = "\n" if separator is None or len(separator) == 0 else separator[0]
-        return (sep.join(text_list),)
-
-
-class StringToolsRandomChoice:
-    def __init__(self):
-        pass
-
-    @classmethod
-    def INPUT_TYPES(s):
-        return {
-            "required": {
-                "seed": (
-                    "INT",
-                    {
-                        "default": 0,
-                        "min": 0,
-                        "max": 0xFFFFFFFFFFFFFFFF,
-                        "forceInput": True,
-                    },
-                ),
-            },
+            "optional": StringToolsOptionalDict({
+                "separator": ("STRING", {"forceInput": True}),
+            }),
             "hidden": {
-                "text": (
-                    "STRING",
-                    {"forceInput": True},
-                ),
                 "prompt": "PROMPT",
                 "extra_pnginfo": "EXTRA_PNGINFO",
                 "unique_id": "UNIQUE_ID",
@@ -316,39 +203,24 @@ class StringToolsRandomChoice:
     FUNCTION = "process"
     CATEGORY = "string-tools"
 
-    def process(self, *args, **kwargs):
-        seed = 0
-        if "seed" in kwargs:
-            seed = kwargs["seed"]
-            del kwargs["seed"]
-
+    def process(self, **kwargs):
+        separator = kwargs.get("separator", "")
+        if isinstance(separator, list):
+            separator = str(separator[0]) if separator else ""
+            
         values = sort_kwargs_value("text", kwargs)
-        random.seed(seed)
-        choice = random.choice(values)
-        return (choice,)
+        return (separator.join(values),)
 
 
-class StringToolsRandomChoiceList:
-    def __init__(self):
-        pass
-
+class StringToolsConcatList:
     @classmethod
     def INPUT_TYPES(s):
         return {
             "required": {
-                "text_list": (
-                    "STRING",
-                    {"forceInput": True},
-                ),
-                "seed": (
-                    "INT",
-                    {
-                        "default": 0,
-                        "min": 0,
-                        "max": 0xFFFFFFFFFFFFFFFF,
-                        "forceInput": True,
-                    },
-                ),
+                "text_list": ("STRING", {"forceInput": True}),
+            },
+            "optional": {
+                "separator": ("STRING", {"forceInput": True}),
             },
         }
 
@@ -357,12 +229,88 @@ class StringToolsRandomChoiceList:
     FUNCTION = "process"
     CATEGORY = "string-tools"
 
-    def process(self, text_list, seed):
+    def process(self, text_list=None, separator=None):
+        if not text_list: return ("",)
+        
+        if separator is None:
+            sep = "\n"
+        elif isinstance(separator, list):
+            sep = separator[0] if separator else "\n"
+        else:
+            sep = str(separator)
+        
+        flat_list = []
+        for x in text_list:
+            if isinstance(x, list):
+                flat_list.extend(map(str, x))
+            else:
+                flat_list.append(str(x))
+        return (sep.join(flat_list),)
+
+
+class StringToolsRandomChoice:
+    @classmethod
+    def INPUT_TYPES(s):
+        return {
+            "required": {
+                "seed": ("INT", {"default": 0, "min": 0, "max": 0xFFFFFFFFFFFFFFFF, "forceInput": True}),
+            },
+            "optional": StringToolsOptionalDict(),
+            "hidden": {
+                "prompt": "PROMPT",
+                "extra_pnginfo": "EXTRA_PNGINFO",
+                "unique_id": "UNIQUE_ID",
+            },
+        }
+
+    RETURN_TYPES = ("STRING",)
+    FUNCTION = "process"
+    CATEGORY = "string-tools"
+
+    def process(self, **kwargs):
+        seed = kwargs.get("seed", 0)
+        values = sort_kwargs_value("text", kwargs)
+        if not values:
+            return ("",)
+        random.seed(seed)
+        choice = random.choice(values)
+        return (choice,)
+
+
+class StringToolsRandomChoiceList:
+    @classmethod
+    def INPUT_TYPES(s):
+        return {
+            "required": {
+                "seed": ("INT", {"default": 0, "min": 0, "max": 0xFFFFFFFFFFFFFFFF, "forceInput": True}),
+                "text_list": ("STRING", {"forceInput": True}),
+            },
+            "hidden": {
+                "prompt": "PROMPT",
+                "extra_pnginfo": "EXTRA_PNGINFO",
+                "unique_id": "UNIQUE_ID",
+            },
+        }
+
+    INPUT_IS_LIST = True
+    RETURN_TYPES = ("STRING",)
+    FUNCTION = "process"
+    CATEGORY = "string-tools"
+
+    def process(self, seed=0, text_list=None, **kwargs):
         if not text_list:
             return ("",)
+        
+        flat_list = []
+        for x in text_list:
+            if isinstance(x, list):
+                flat_list.extend(x)
+            else:
+                flat_list.append(x)
+                
         s = seed[0] if isinstance(seed, list) else seed
         random.seed(s)
-        choice = random.choice(text_list)
+        choice = random.choice(flat_list)
         return (choice,)
 
 
@@ -373,27 +321,24 @@ class StringToolsBalancedChoice(StringToolsRandomChoice):
 
     @classmethod
     def INPUT_TYPES(s):
-        input_types = super().INPUT_TYPES()
-        input_types["optional"] = StringToolsOptionalDict(
-            get_default_callback=lambda key: (
-                ("INT") if key.startswith("weight_") else None,
-            )
-        )
-        return input_types
+        return super().INPUT_TYPES()
 
-    def process(self, *args, **kwargs):
-        seed = 0
-        if "seed" in kwargs:
-            seed = kwargs["seed"]
-            del kwargs["seed"]
-
+    def process(self, **kwargs):
+        seed = kwargs.get("seed", 0)
         node = get_node(kwargs)
-        title = node.get("title", node.get("type", None))
+        
         values = sort_kwargs_value("text", kwargs)
-        weights = sort_kwargs_value("weight", kwargs)
-        random.seed(seed)
+        if not values:
+            return ("",)
 
-        id = node.get("id", None)
+        if node is None:
+            random.seed(seed)
+            return (random.choice(values),)
+            
+        unique_id = kwargs.get("unique_id", None)
+        if isinstance(unique_id, list): unique_id = unique_id[0]
+        id = str(unique_id) if unique_id is not None else str(node.get("id", ""))
+
         counts = self.counts.get(id, None)
         if counts is None:
             counts = self.counts[id] = {}
@@ -401,10 +346,18 @@ class StringToolsBalancedChoice(StringToolsRandomChoice):
         if total_count is None:
             total_count = self.total_count[id] = 0
 
-        # weightsが空またはvaluesと長さが合わない場合は均等配分にフォールバック
-        if not weights or len(weights) != len(values):
+        title = node.get("title", node.get("type", None))
+        
+        prompt = kwargs.get("prompt", {})
+        computed_weights = calculate_weights_from_prompt(
+            prompt, id, ["StringToolsRandomChoice", "StringToolsBalancedChoice", "StringToolsRandomChoiceList", "StringToolsBalancedChoiceList"], "text"
+        )
+        if computed_weights:
+            weights = [computed_weights.get(f"text_{i}", 1) for i in range(len(values))]
+        else:
             weights = [1] * len(values)
 
+        random.seed(seed)
         choice_idx = random.choices(range(len(values)), weights=weights)[0]
         choice_text = "_".join(["text", str(choice_idx)])
         counts[choice_text] = counts.get(choice_text, 0) + 1
@@ -416,9 +369,7 @@ class StringToolsBalancedChoice(StringToolsRandomChoice):
             for idx in range(len(values)):
                 text = "_".join(["text", str(idx)])
                 count = counts.get(text, 0)
-                print(
-                    f"\tInput:{text} Weight:{weights[idx]} ({format(weights[idx] / total_weight * 100)}%) - Count:{count} ({format(count / self.total_count[id] * 100)}%)"
-                )
+                print(f"\tInput:{text} Weight:{weights[idx]} ({weights[idx] / total_weight * 100}%) - Count:{count} ({count / self.total_count[id] * 100}%)")
 
         return (values[choice_idx],)
 
@@ -430,37 +381,13 @@ class StringToolsBalancedChoiceList(StringToolsRandomChoiceList):
 
     @classmethod
     def INPUT_TYPES(s):
-        return {
-            "required": {
-                "text_list": (
-                    "STRING",
-                    {"forceInput": True},
-                ),
-                "seed": (
-                    "INT",
-                    {
-                        "default": 0,
-                        "min": 0,
-                        "max": 0xFFFFFFFFFFFFFFFF,
-                        "forceInput": True,
-                    },
-                ),
-            },
-            "optional": {
-                "weight_list": (
-                    "INT",
-                    {"forceInput": True},
-                )
-            },
-            "hidden": {
-                "prompt": "PROMPT",
-                "extra_pnginfo": "EXTRA_PNGINFO",
-                "unique_id": "UNIQUE_ID",
-            },
+        input_types = super().INPUT_TYPES()
+        input_types["optional"] = {
+            "weight_list": ("INT", {"forceInput": True})
         }
+        return input_types
 
-    def process(self, text_list, seed, weight_list=None, **kwargs):
-        # INPUT_IS_LIST = True のため hidden 入力もリストにラップされる
+    def process(self, seed=0, text_list=None, weight_list=None, **kwargs):
         if isinstance(kwargs.get("prompt"), list):
             kwargs["prompt"] = kwargs["prompt"][0]
         if isinstance(kwargs.get("extra_pnginfo"), list):
@@ -471,97 +398,152 @@ class StringToolsBalancedChoiceList(StringToolsRandomChoiceList):
         if not text_list:
             return ("",)
 
+        flat_list = []
+        for x in text_list:
+            if isinstance(x, list):
+                flat_list.extend(x)
+            else:
+                flat_list.append(x)
+
         s = seed[0] if isinstance(seed, list) else seed
         random.seed(s)
 
         node = get_node(kwargs)
         if node is None:
-            return (random.choice(text_list),)
+            return (random.choice(flat_list),)
             
         title = node.get("title", node.get("type", None))
-        id = node.get("id", None)
+        unique_id = kwargs.get("unique_id", None)
+        if isinstance(unique_id, list): unique_id = unique_id[0]
+        id = str(unique_id) if unique_id is not None else str(node.get("id", ""))
         
         counts = self.counts.get(id, None)
         if counts is None:
             counts = self.counts[id] = {}
+        
         total_count = self.total_count.get(id, None)
         if total_count is None:
             total_count = self.total_count[id] = 0
-
+        
         weights = []
-        if weight_list is not None and len(weight_list) == len(text_list):
-            weights = weight_list
-        else:
+        if weight_list is not None:
+            # weight_list も平坦化が必要な可能性があるが、通常は 1つ
+            flat_weights = []
+            for w in weight_list:
+                if isinstance(w, list): flat_weights.extend(w)
+                else: flat_weights.append(w)
+            
+            if len(flat_weights) == len(flat_list):
+                weights = flat_weights
+
+        if not weights:
             prompt = kwargs.get("prompt", {})
             computed_weights = calculate_weights_from_prompt(
                 prompt, id, ["StringToolsRandomChoice", "StringToolsBalancedChoice", "StringToolsRandomChoiceList", "StringToolsBalancedChoiceList"], "text_list"
             )
-            # If input is connected to a list-generating node, text_list is a single connection.
-            # Thus computed_weights might just have weight_list or weight_0.
-            # For simplicity, if we don't have exactly per-element weights, uniform weight is used
-            # Unless we are getting multiple input sources. List nodes usually receive 1 link for text_list.
-            # To extract valid weights, we'd need the upstream node to supply a weight_list, 
-            # Or assume uniform weights if not supplied. 
-            
-            # Reverting to basic equal weights if no weight_list is provided for List nodes logic,
-            # or picking up from computed weights if applicable.
-            weights = [1] * len(text_list)
-            
-            # If the upstream node passed exactly matching length weights via dict mapping
-            if computed_weights and len(computed_weights) == len(text_list):
-                 weights = [computed_weights[k] for k in sorted(computed_weights.keys())]
+            if computed_weights:
+                w = computed_weights.get("text_list", 1)
+                weights = [w / len(flat_list)] * len(flat_list)
+            else:
+                weights = [1] * len(flat_list)
 
-        choice_idx = random.choices(range(len(text_list)), weights=weights)[0]
-        choice_text = "_".join(["text", str(choice_idx)])
+        choice_idx = random.choices(range(len(flat_list)), weights=weights)[0]
+        choice_text = str(choice_idx)
         counts[choice_text] = counts.get(choice_text, 0) + 1
         self.total_count[id] += 1
         total_weight = sum(weights)
 
         if self.debug or kwargs.get("debug", False):
-            print(f"#{id} {title} (Seed:{s}):")
-            for idx in range(len(text_list)):
-                text = "_".join(["text", str(idx)])
-                count = counts.get(text, 0)
-                print(
-                    f"\tInput:{text} Weight:{weights[idx]} ({format(weights[idx] / total_weight * 100)}%) - Count:{count} ({format(count / self.total_count[id] * 100)}%)"
-                )
+            print(f"#{id} {title} (Seed:{seed}):")
+            for idx in range(len(flat_list)):
+                count = counts.get(str(idx), 0)
+                print(f"\tInput:{idx} Weight:{weights[idx]} ({weights[idx] / total_weight * 100 if total_weight > 0 else 0}%) - Count:{count} ({count / self.total_count[id] * 100}%)")
 
-        return (text_list[choice_idx],)
+        return (flat_list[choice_idx],)
 
 
-class MockStringList:
-    def __init__(self):
-        pass
+class StringToolsSeed:
+    @classmethod
+    def INPUT_TYPES(s):
+        return {
+            "required": {
+                "seed": (
+                    "INT",
+                    {"default": 0, "min": 0, "max": 0xFFFFFFFFFFFFFFFF},
+                ),
+            }
+        }
 
+    RETURN_TYPES = ("INT",)
+    FUNCTION = "process"
+    CATEGORY = "string-tools"
+
+    def process(self, seed):
+        return (seed,)
+
+
+class StringToolsStringsToList:
+    @classmethod
+    def INPUT_TYPES(s):
+        return {
+            "required": {},
+            "optional": StringToolsOptionalDict(),
+            "hidden": {
+                "prompt": "PROMPT",
+                "extra_pnginfo": "EXTRA_PNGINFO",
+                "unique_id": "UNIQUE_ID",
+            },
+        }
+
+    RETURN_TYPES = ("STRING",)
+    OUTPUT_IS_LIST = (True,)
+    FUNCTION = "process"
+    CATEGORY = "string-tools"
+
+    def process(self, **kwargs):
+        values = sort_kwargs_value("text", kwargs)
+        return (values,)
+
+
+class StringToolsMockStringList:
     @classmethod
     def INPUT_TYPES(s):
         return {
             "required": {
                 "str1": ("STRING", {"forceInput": True}),
                 "str2": ("STRING", {"forceInput": True}),
-            },
+            }
         }
-
+    
     RETURN_TYPES = ("STRING",)
-    RETURN_NAMES = ("list",)
     OUTPUT_IS_LIST = (True,)
     FUNCTION = "process"
-    CATEGORY = "string-tools"
+    CATEGORY = "string-tools/test"
 
     def process(self, str1, str2):
         return ([str1, str2],)
 
+
 NODE_CLASS_MAPPINGS = {
-    "StringToolsSeed": StringToolsSeed,
     "StringToolsString": StringToolsString,
     "StringToolsText": StringToolsText,
     "StringToolsConcat": StringToolsConcat,
-    "StringToolsRandomChoice": StringToolsRandomChoice,
-    "StringToolsBalancedChoice": StringToolsBalancedChoice,
     "StringToolsConcatList": StringToolsConcatList,
+    "StringToolsRandomChoice": StringToolsRandomChoice,
     "StringToolsRandomChoiceList": StringToolsRandomChoiceList,
+    "StringToolsBalancedChoice": StringToolsBalancedChoice,
     "StringToolsBalancedChoiceList": StringToolsBalancedChoiceList,
-    "string-tools/MockStringList": MockStringList,
+    "StringToolsSeed": StringToolsSeed,
+    "StringToolsStringsToList": StringToolsStringsToList,
 }
-WEB_DIRECTORY = "./js"
 
+import os
+if os.environ.get("COMFYUI_TEST_MODE") == "true" or os.environ.get("PYTEST_CURRENT_TEST"):
+    NODE_CLASS_MAPPINGS["StringToolsMockStringList"] = StringToolsMockStringList
+
+NODE_DISPLAY_NAME_MAPPINGS = {
+    "StringToolsMockStringList": "StringTools [TEST ONLY] Mock String List"
+}
+
+WEB_DIRECTORY = "./js"
+__all__ = ["NODE_CLASS_MAPPINGS", "NODE_DISPLAY_NAME_MAPPINGS", "WEB_DIRECTORY"]
