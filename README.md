@@ -32,6 +32,10 @@
 `StringToolsRandomChoice` との違いは重み付けにあります。
 `StringToolsBalancedChoice` の入力のどこかに `StringToolsRandomChoice` か `StringToolsBalancedChoice` があった場合、その有効な入力数に応じて重み付けを行い、有効な入力数が多いほど選択されやすくなります。
 
+## 開発および自動リリース
+
+本リポジトリは GitHub Actions を利用した自動リリース CI/CD が構築されています。`develop` ブランチから `master` ブランチへのプルリクエストがマージされると、自動的にバージョンがインクリメント（バンプ）され、Gitタグが作成され、GitHub Releases へのZIP公開および Comfy registry へのパブリッシュが実行されます。
+
 ## ライセンス
 
 [MIT](./LICENSE)
