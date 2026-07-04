@@ -7,6 +7,10 @@ on:
     paths:
       - "pyproject.toml"
   workflow_call:
+    inputs:
+      tag:
+        required: false
+        type: string
 
 permissions:
   issues: write
@@ -19,6 +23,8 @@ jobs:
     steps:
       - name: Check out code
         uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref }}
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:

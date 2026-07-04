@@ -5,6 +5,10 @@ on:
     tags:
       - "v[0-9]+\\.[0-9]+\\.[0-9]+"
   workflow_call:
+    inputs:
+      tag:
+        required: false
+        type: string
 
 jobs:
   create_release:
@@ -15,6 +19,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: ${{ inputs.tag || github.ref }}
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -29,7 +34,14 @@ jobs:
         run: |
           REPOSITORY=$(echo ${{ github.event.repository.name }})
           echo "repository=$REPOSITORY" >> "$GITHUB_OUTPUT"
-          VERSION=$(basename ${{ github.ref }})
+          
+          INPUT_TAG="${{ inputs.tag }}"
+          if [ -n "$INPUT_TAG" ]; then
+            VERSION="$INPUT_TAG"
+          else
+            VERSION=$(basename ${{ github.ref }})
+          fi
+          
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           VERSION_STRING=$(echo $VERSION | sed -e "s#\.#_#g")
           echo "version_string=$VERSION_STRING" >> "$GITHUB_OUTPUT"
